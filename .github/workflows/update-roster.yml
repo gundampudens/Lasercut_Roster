@@ -1,13 +1,12 @@
 name: 更新 Roster ICS
 
+# 只允許手動觸發
+on:
+  workflow_dispatch:
+
 # 讓 GITHUB_TOKEN 擁有寫入 repo contents 的權限
 permissions:
   contents: write
-  workflows: write   # 若不修改 .github/workflows 可省略
-
-on:
-  workflow_dispatch:  # 手動觸發
-
 
 jobs:
   update-roster:
@@ -17,12 +16,12 @@ jobs:
       - name: Checkout 程式碼
         uses: actions/checkout@v3
         with:
-          persist-credentials: true  # 讓後續 git push 使用 GITHUB_TOKEN
-          fetch-depth: 0            # 確保有完整 repo 歷史
+          persist-credentials: true   # 讓後續 git push 使用 GITHUB_TOKEN
+          fetch-depth: 0             # 確保有完整 repo 歷史
 
       - name: 列出檔案 (Debug)
         run: |
-          echo "GITHUB_WORKSPACE = $GITHUB_WORKSPACE"
+          echo "Workspace: $GITHUB_WORKSPACE"
           ls -R .
 
       - name: 設定 Python 環境
