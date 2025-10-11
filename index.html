@@ -3,176 +3,203 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>排班編輯器</title>
+  <title>排班與名單靜態編輯器</title>
   <style>
-    body{font-family: sans-serif;max-width:800px;margin:2em auto;padding:0 1em}
-    table{width:100%;border-collapse:collapse;margin-top:1em}
-    th,td{border:1px solid #ccc;padding:0.5em;text-align:center}
-    button{margin:0.2em}
-    /* Modal */
-    #dlg {
-      display:none;
-      position:fixed; top:10%; left:50%;
-      transform:translateX(-50%);
-      background:#fff;
-      padding:1em;
-      border:1px solid #666;
-      box-shadow:2px 2px 8px rgba(0,0,0,0.3);
-      width:320px;
+    body {
+      font-family: sans-serif;
+      max-width: 900px;
+      margin: 2em auto;
+      padding: 0 1em;
     }
-    #dlg h3 { margin-top:0 }
-    #dlg label{display:block;margin:0.5em 0}
-    #dlg input[type="text"],
-    #dlg input[type="date"],
-    #dlg select {
-      width:100%; box-sizing:border-box;
+    h1, h2 {
+      margin-top: 1.5em;
     }
-    #dlg select[multiple] { height:6em }
+    .status {
+      color: #666;
+      margin: 0.5em 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1em;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 0.5em;
+      text-align: left;
+    }
+    th {
+      background: #f5f5f5;
+    }
+    input[type="datetime-local"],
+    input[type="text"],
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 1em;
+      padding: 0.3em;
+    }
+    textarea {
+      height: 200px;
+      resize: vertical;
+    }
+    button {
+      font-size: 1em;
+      padding: 0.5em 1em;
+      margin: 0.5em 0;
+    }
+    .btn-group {
+      margin-top: 0.5em;
+    }
+    .center {
+      text-align: center;
+    }
   </style>
+  <!-- 載入 ical.js -->
+  <script src="https://cdn.jsdelivr.net/npm/ical.js@1.4.0/build/ical.min.js"></script>
 </head>
 <body>
+  <h1>排班（ICS）靜態編輯器</h1>
+  <div id="status-ics" class="status">正在載入 roster.ics …</div>
+  <div id="editor-ics" style="display:none">
+    <table>
+      <thead>
+        <tr>
+          <th class="center">#</th>
+          <th>開始時間 (UTC)</th>
+          <th>事件名稱 (SUMMARY)</th>
+          <th>地點 (LOCATION)</th>
+        </tr>
+      </thead>
+      <tbody id="events-tbody"></tbody>
+    </table>
+    <div class="btn-group">
+      <button id="download-ics">下載 更新後 roster.ics</button>
+    </div>
+  </div>
 
-  <h1>排班編輯器</h1>
-  <button onclick="openAdd()">＋ 新增日期</button>
-  <table>
-    <thead>
-      <tr>
-        <th>日期</th><th>現場</th><th>WFH</th><th>動作</th>
-      </tr>
-    </thead>
-    <tbody id="tb"></tbody>
-  </table>
-
-  <!-- 編輯對話窗 -->
-  <div id="dlg">
-    <h3 id="dlgTitle">編輯排班</h3>
-    <label>
-      日期：
-      <input type="date" id="fDate">
-    </label>
-    <label>
-      現場：
-      <select id="fOnsite" multiple></select>
-    </label>
-    <label>
-      WFH：
-      <select id="fWfh" multiple></select>
-    </label>
-    <div style="text-align:right;margin-top:1em">
-      <button onclick="save()">存檔</button>
-      <button onclick="closeDlg()">取消</button>
+  <h2>同事名單（selection.txt）靜態編輯器</h2>
+  <div id="status-txt" class="status">正在載入 selection.txt …</div>
+  <div id="editor-txt" style="display:none">
+    <textarea id="sel-text"></textarea>
+    <div class="btn-group">
+      <button id="download-txt">下載 更新後 selection.txt</button>
     </div>
   </div>
 
   <script>
-  let roster = [], selection = [], editDate = null;
+  (async function(){
+    // 全域變數
+    let comp, vevents;
 
-  // 1. 啟動時同時載入 排班 與 同事名單
-  Promise.all([
-    fetch('/api/roster').then(r=>r.json()),
-    fetch('/api/selection').then(r=>r.json())
-  ]).then(([rlist,slist])=>{
-    roster    = rlist;
-    selection = slist;
-    renderTable();
-  }).catch(e=>{
-    alert('載入失敗：'+e);
-  });
+    // --- ICS 區塊 ---
+    try {
+      const resIcs = await fetch('roster.ics');
+      if (!resIcs.ok) throw new Error(resIcs.status + ' ' + resIcs.statusText);
+      const icsText = await resIcs.text();
 
-  // 2. 把 roster render 成表格
-  function renderTable(){
-    const tb = document.getElementById('tb');
-    tb.innerHTML = '';
-    roster.forEach(r=>{
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${r.date}</td>
-        <td>${r.onsite.join('、')}</td>
-        <td>${r.wfh.join('、')}</td>
-        <td>
-          <button onclick="openEdit('${r.date}')">編輯</button>
-          <button onclick="del('${r.date}')">刪除</button>
-        </td>`;
-      tb.appendChild(tr);
-    });
-  }
+      // 解析 ICS
+      const jcal = ICAL.parse(icsText);
+      comp = new ICAL.Component(jcal);
+      vevents = comp.getAllSubcomponents('vevent');
 
-  // 3. 建立 <select> 選項
-  function buildSelects(ons=[], wfh=[]){
-    const so = document.getElementById('fOnsite');
-    const sw = document.getElementById('fWfh');
-    so.innerHTML = sw.innerHTML = '';
-    selection.forEach(name=>{
-      const o1 = new Option(name,name);
-      const o2 = new Option(name,name);
-      if(ons.includes(name)) o1.selected = true;
-      if(wfh.includes(name)) o2.selected = true;
-      so.add(o1);
-      sw.add(o2);
-    });
-  }
+      const tbody = document.getElementById('events-tbody');
 
-  // 4. 開「新增」對話窗
-  function openAdd(){
-    editDate = null;
-    document.getElementById('dlgTitle').innerText = '新增排班';
-    document.getElementById('fDate').value = '';
-    buildSelects();
-    showDlg();
-  }
+      vevents.forEach((ve, i) => {
+        const event = new ICAL.Event(ve);
+        const jsDate = event.startDate.toJSDate();
+        // datetime-local 的 value 要 "YYYY-MM-DDThh:mm"
+        const dtLocal = jsDate.toISOString().slice(0,16);
+        const summary = event.summary || '';
+        const location = event.location || '';
 
-  // 5. 開「編輯」對話窗
-  function openEdit(date){
-    editDate = date;
-    const r = roster.find(x=>x.date===date);
-    document.getElementById('dlgTitle').innerText = '編輯排班';
-    document.getElementById('fDate').value = r.date;
-    buildSelects(r.onsite, r.wfh);
-    showDlg();
-  }
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="center">${i+1}</td>
+          <td>
+            <input type="datetime-local" data-idx="${i}" value="${dtLocal}">
+          </td>
+          <td>
+            <input type="text" data-idx="${i}" class="field-sum" value="${summary}">
+          </td>
+          <td>
+            <input type="text" data-idx="${i}" class="field-loc" value="${location}">
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
 
-  function showDlg(){
-    document.getElementById('dlg').style.display = 'block';
-  }
-  function closeDlg(){
-    document.getElementById('dlg').style.display = 'none';
-  }
+      document.getElementById('status-ics').style.display = 'none';
+      document.getElementById('editor-ics').style.display = 'block';
 
-  function getSelected(id){
-    return Array.from(document.getElementById(id).selectedOptions)
-                .map(o=>o.value);
-  }
+      // 下載更新後的 roster.ics
+      document.getElementById('download-ics').onclick = () => {
+        // 先把表格值寫回每個 vevent
+        document.querySelectorAll('input[type="datetime-local"]').forEach(input => {
+          const idx = +input.dataset.idx;
+          const ve = vevents[idx];
+          const d = new Date(input.value);
+          const t = new ICAL.Time({
+            year:   d.getUTCFullYear(),
+            month:  d.getUTCMonth()+1,
+            day:    d.getUTCDate(),
+            hour:   d.getUTCHours(),
+            minute: d.getUTCMinutes(),
+            second: d.getUTCSeconds(),
+            isDate: false
+          });
+          ve.getFirstProperty('dtstart').setValue(t);
+        });
+        document.querySelectorAll('input.field-sum').forEach(input => {
+          const idx = +input.dataset.idx;
+          vevents[idx].getFirstProperty('summary').setValue(input.value);
+        });
+        document.querySelectorAll('input.field-loc').forEach(input => {
+          const idx = +input.dataset.idx;
+          vevents[idx].getFirstProperty('location').setValue(input.value);
+        });
 
-  // 6. 按存檔 → POST or PUT
-  function save(){
-    const date = document.getElementById('fDate').value;
-    if(!date) return alert('請填日期');
-    const onsite = getSelected('fOnsite');
-    const wfh    = getSelected('fWfh');
-    const body = JSON.stringify({date, onsite, wfh});
-    const hdr  = {'Content-Type':'application/json'};
-    let url    = '/api/roster';
-    let opt    = {method:'POST', headers:hdr, body};
+        const newIcs = comp.toString();
+        const blob = new Blob([newIcs], { type: 'text/calendar;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'roster-updated.ics';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
 
-    if(editDate){
-      url = `/api/roster/${editDate}`;
-      opt.method = 'PUT';
+    } catch(err) {
+      document.getElementById('status-ics').textContent =
+        '載入 roster.ics 失敗：' + err;
     }
 
-    fetch(url, opt)
-      .then(r=>r.json())
-      .then(j=>{
-        if(j.error) alert(j.error);
-        else location.reload();
-      });
-  }
+    // --- selection.txt 區塊 ---
+    try {
+      const resTxt = await fetch('selection.txt');
+      if (!resTxt.ok) throw new Error(resTxt.status + ' ' + resTxt.statusText);
+      const txt = await resTxt.text();
 
-  // 7. 刪除
-  function del(d){
-    if(!confirm(`確定刪除 ${d}?`)) return;
-    fetch(`/api/roster/${d}`, {method:'DELETE'})
-      .then(_=>location.reload());
-  }
+      const ta = document.getElementById('sel-text');
+      ta.value = txt;
+
+      document.getElementById('status-txt').style.display = 'none';
+      document.getElementById('editor-txt').style.display = 'block';
+
+      document.getElementById('download-txt').onclick = () => {
+        const newText = ta.value;
+        const blob = new Blob([newText], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'selection-updated.txt';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+
+    } catch(err) {
+      document.getElementById('status-txt').textContent =
+        '載入 selection.txt 失敗：' + err;
+    }
+  })();
   </script>
 </body>
 </html>
