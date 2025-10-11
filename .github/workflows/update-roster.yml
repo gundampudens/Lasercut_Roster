@@ -1,39 +1,42 @@
 name: 更新 Roster ICS
 
-# grant GITHUB_TOKEN the ability to write repo contents
+# 讓 GITHUB_TOKEN 擁有寫入 repo contents 的權限
 permissions:
   contents: write
-  workflows: write
+  workflows: write   # 若不修改 .github/workflows 可省略
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 手動觸發
   schedule:
-    - cron: '0 16 * * *'  # daily at UTC 16:00
+    - cron: '0 16 * * *'  # 每天 UTC16:00 自動執行
 
 jobs:
-  build:
+  update-roster:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout 程式碼
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true  # 讓後續 git push 使用 GITHUB_TOKEN
+          fetch-depth: 0            # 確保有完整 repo 歷史
 
-      - name: Debug — list files
+      - name: 列出檔案 (Debug)
         run: |
-          echo "Workspace: $GITHUB_WORKSPACE"
+          echo "GITHUB_WORKSPACE = $GITHUB_WORKSPACE"
           ls -R .
 
-      - name: Setup Python
+      - name: 設定 Python 環境
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
 
-      - name: Install dependencies
+      - name: 安裝相依套件
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run update_roster.py
+      - name: 執行 update_roster.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -45,7 +48,7 @@ jobs:
             --msg "Auto-update roster.ics @$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
             --token "$GITHUB_TOKEN"
 
-      - name: Commit & Push changes
+      - name: Commit & Push 變更
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
