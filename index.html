@@ -4,19 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Roster ICS 編輯器 (純前端)</title>
+
   <style>
     body { font-family: sans-serif; padding: 1rem; }
     table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
-    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; }
     input, button { font-size: 1rem; }
     .center { text-align: center; }
   </style>
-  <!-- ical.js CDN -->
-  <script src="https://unpkg.com/ical.js/build/ical.js"></script>
+
+  <!-- 一定要先載入 ical.js -->
+  <script src="https://cdn.jsdelivr.net/npm/ical.js@1.4.0/build/ical.min.js"></script>
 </head>
 <body>
   <h1>Roster ICS 編輯器 (純前端)</h1>
   <p>從 <code>roster.ics</code> 讀取事件，可直接修改並「下載」新檔。</p>
+
   <div id="status">載入中…</div>
   <form id="editor" style="display:none">
     <table>
@@ -34,82 +37,77 @@
   </form>
 
   <script>
-    (async function(){
-      try {
-        // 1. fetch roster.ics
-        let res = await fetch('roster.ics');
-        if (!res.ok) throw new Error('讀取 roster.ics 失敗：'+res.status);
-        let icsText = await res.text();
+  (async function(){
+    try {
+      // 1. 讀 roster.ics
+      let res = await fetch('roster.ics');
+      if (!res.ok) throw new Error('讀取 roster.ics 失敗：'+res.status);
+      let icsText = await res.text();
 
-        // 2. parse
-        let jcal = ICAL.parse(icsText);
-        let comp = new ICAL.Component(jcal);
-        let vevents = comp.getAllSubcomponents('vevent');
-        let tbody = document.getElementById('events-tbody');
+      // 2. 用 ical.js parse
+      let jcal = ICAL.parse(icsText);
+      let comp = new ICAL.Component(jcal);
+      let vevents = comp.getAllSubcomponents('vevent');
+      let tbody = document.getElementById('events-tbody');
 
-        vevents.forEach((ve, i) => {
-          let event = new ICAL.Event(ve);
-          let dt = event.startDate.toString();   // ISO string
-          let summary = event.summary || '';
-          let location = event.location || '';
+      vevents.forEach((ve, i) => {
+        let event = new ICAL.Event(ve);
+        let dt = event.startDate.toString();   // ISO 字串
+        let summary = event.summary || '';
+        let location = event.location || '';
 
-          let tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td class="center">${i+1}</td>
-            <td><input data-idx="${i}" class="field-dt" type="datetime-local"
-                       value="${dt.slice(0,16)}" /></td>
-            <td><input data-idx="${i}" class="field-sum" type="text"
-                       value="${summary}" /></td>
-            <td><input data-idx="${i}" class="field-loc" type="text"
-                       value="${location}" /></td>
-          `;
-          tbody.appendChild(tr);
+        let tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="center">${i+1}</td>
+          <td><input data-idx="${i}" class="field-dt" type="datetime-local"
+                     value="${dt.slice(0,16)}" /></td>
+          <td><input data-idx="${i}" class="field-sum" type="text"
+                     value="${summary}" /></td>
+          <td><input data-idx="${i}" class="field-loc" type="text"
+                     value="${location}" /></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('status').style.display = 'none';
+      document.getElementById('editor').style.display = 'block';
+
+      // 3. 下載新 ICS
+      document.getElementById('download').onclick = () => {
+        document.querySelectorAll('input.field-dt').forEach(input => {
+          let idx = +input.dataset.idx;
+          let ve = vevents[idx];
+          let d = new Date(input.value);
+          let icalDt = new ICAL.Time({
+            year:   d.getUTCFullYear(),
+            month:  d.getUTCMonth()+1,
+            day:    d.getUTCDate(),
+            hour:   d.getUTCHours(),
+            minute: d.getUTCMinutes(),
+            isDate: false
+          });
+          ve.getFirstProperty('dtstart').setValue(icalDt);
+        });
+        document.querySelectorAll('input.field-sum').forEach(input => {
+          vevents[+input.dataset.idx].getFirstProperty('summary').setValue(input.value);
+        });
+        document.querySelectorAll('input.field-loc').forEach(input => {
+          vevents[+input.dataset.idx].getFirstProperty('location').setValue(input.value);
         });
 
-        document.getElementById('status').style.display = 'none';
-        document.getElementById('editor').style.display = 'block';
+        let newIcs = comp.toString();
+        let blob = new Blob([newIcs], { type: 'text/calendar;charset=utf-8' });
+        let a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'roster-updated.ics';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
 
-        // 3. 下載新 ICS
-        document.getElementById('download').onclick = () => {
-          // 重新寫回每個 VEVENT
-          document.querySelectorAll('input.field-dt').forEach(input => {
-            let idx = +input.dataset.idx;
-            let ve = vevents[idx];
-            let d = new Date(input.value);
-            // ICAL.DateTime from JS Date
-            let icalDt = new ICAL.Time({
-              year:   d.getUTCFullYear(),
-              month:  d.getUTCMonth()+1,
-              day:    d.getUTCDate(),
-              hour:   d.getUTCHours(),
-              minute: d.getUTCMinutes(),
-              isDate: false
-            });
-            ve.getFirstProperty('dtstart').setValue(icalDt);
-          });
-          document.querySelectorAll('input.field-sum').forEach(input => {
-            let idx = +input.dataset.idx;
-            vevents[idx].getFirstProperty('summary').setValue(input.value);
-          });
-          document.querySelectorAll('input.field-loc').forEach(input => {
-            let idx = +input.dataset.idx;
-            vevents[idx].getFirstProperty('location').setValue(input.value);
-          });
-
-          // 產生新的 ICS
-          let newIcs = comp.toString();
-          let blob = new Blob([newIcs], { type: 'text/calendar;charset=utf-8' });
-          let a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = 'roster-updated.ics';
-          a.click();
-          URL.revokeObjectURL(a.href);
-        };
-
-      } catch (e) {
-        document.getElementById('status').textContent = e;
-      }
-    })();
+    } catch (e) {
+      document.getElementById('status').textContent = e;
+    }
+  })();
   </script>
 </body>
 </html>
