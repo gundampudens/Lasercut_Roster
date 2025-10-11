@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>排班編輯器</title>
+  <style>
+    body{font-family:sans-serif;max-width:800px;margin:2em auto}
+    table{width:100%;border-collapse:collapse;margin-top:1em}
+    th,td{border:1px solid #ccc;padding:0.5em;text-align:center}
+    select{width:100%;height:6em}
+    #dlg{display:none;position:fixed;top:10%;left:50%;
+         transform:translateX(-50%);background:#fff;
+         padding:1em;border:1px solid #666;box-shadow:2px 2px 5px rgba(0,0,0,0.3)}
+    #dlg input{width:100%}
+    button{margin:0.2em}
+  </style>
+</head>
+<body>
+  <h1>排班編輯器</h1>
+  <button onclick="openAdd()">新增日期</button>
+  <table>
+    <thead>
+      <tr><th>日期</th><th>現場</th><th>WFH</th><th>動作</th></tr>
+    </thead>
+    <tbody id="tb"></tbody>
+  </table>
+
+  <div id="dlg">
+    <h3 id="dlgTitle"></h3>
+    <label>日期 (YYYY/MM/DD)：<br>
+      <input id="fDate" placeholder="2025/10/15">
+    </label><br><br>
+
+    <label>現場：</label><br>
+    <select id="fOnsite" multiple></select><br><br>
+
+    <label>WFH：</label><br>
+    <select id="fWfh" multiple></select><br><br>
+
+    <button onclick="save()">存檔</button>
+    <button onclick="closeDlg()">取消</button>
+  </div>
+
+  <script>
+    let roster = [], selection = [], editDate = null;
+
+    // 一次載入排班與同事選單
+    Promise.all([
+      fetch("/api/roster").then(r=>r.json()),
+      fetch("/api/selection").then(r=>r.json())
+    ]).then(([rlist, slist])=>{
+      roster    = rlist;
+      selection = slist;
+      renderTable();
+    });
+
+    function renderTable(){
+      const tb = document.getElementById("tb");
+      tb.innerHTML = "";
+      roster.forEach(r=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.date}</td>
+          <td>${r.onsite.join("、")}</td>
+          <td>${r.wfh.join("、")}</td>
+          <td>
+            <button onclick="openEdit('${r.date}')">編輯</button>
+            <button onclick="del('${r.date}')">刪除</button>
+          </td>`;
+        tb.appendChild(tr);
+      });
+    }
+
+    function buildSelects(ons, wfh){
+      const so = document.getElementById("fOnsite");
+      const sw = document.getElementById("fWfh");
+      so.innerHTML = sw.innerHTML = "";
+      selection.forEach(name => {
+        const o1 = new Option(name, name);
+        const o2 = new Option(name, name);
+        if (ons.includes(name)) o1.selected = true;
+        if (wfh.includes(name)) o2.selected = true;
+        so.add(o1);
+        sw.add(o2);
+      });
+    }
+
+    function openAdd(){
+      editDate = null;
+      document.getElementById("dlgTitle").innerText = "新增排班";
+      document.getElementById("fDate").value = "";
+      buildSelects([], []);
+      document.getElementById("dlg").style.display = "block";
+    }
+
+    function openEdit(d){
+      editDate = d;
+      const r = roster.find(x => x.date === d);
+      document.getElementById("dlgTitle").innerText = "編輯排班";
+      document.getElementById("fDate").value = r.date;
+      buildSelects(r.onsite, r.wfh);
+      document.getElementById("dlg").style.display = "block";
+    }
+
+    function closeDlg(){
+      document.getElementById("dlg").style.display = "none";
+    }
+
+    function getSelected(id){
+      return Array.from(document.getElementById(id).selectedOptions)
+                  .map(o => o.value);
+    }
+
+    function save(){
+      const d   = document.getElementById("fDate").value.trim();
+      if (!/^\d{4}\/\d{2}\/\d{2}$/.test(d)) {
+        return alert("日期格式錯誤，請輸入 YYYY/MM/DD");
+      }
+      const ons = getSelected("fOnsite");
+      const wfh = getSelected("fWfh");
+      const body = JSON.stringify({date: d, onsite: ons, wfh: wfh});
+      const hdr  = {'Content-Type':'application/json'};
+      let url, opt = {headers: hdr, body};
+
+      if (editDate) {
+        url = `/api/roster/${editDate}`;
+        opt.method = "PUT";
+      } else {
+        url = "/api/roster";
+        opt.method = "POST";
+      }
+
+      fetch(url, opt)
+        .then(r => r.json())
+        .then(j => {
+          if (j.error) return alert(j.error);
+          location.reload();
+        });
+    }
+
+    function del(d){
+      if (!confirm(`確定要刪除 ${d} 嗎？`)) return;
+      fetch(`/api/roster/${d}`, {method:"DELETE"})
+        .then(_=>location.reload());
+    }
+  </script>
+</body>
+</html>
