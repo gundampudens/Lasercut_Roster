@@ -1,0 +1,35 @@
+name: 更新 Roster ICS
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 16 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x update_roster.py
+          ./update_roster.py \
+            --input roster.txt \
+            --repo gundampudens/Lasercut_Roster \
+            --path roster.ics \
+            --branch main \
+            --msg "Auto-update roster.ics @$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --token "$GITHUB_TOKEN"
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add roster.ics Backup/*
+          git commit -m "自動更新 roster.ics @$(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "No changes"
+          git push
