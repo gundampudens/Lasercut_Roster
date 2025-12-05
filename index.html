@@ -26,22 +26,24 @@
     let currentSha = '';
 
     // 1. 讀取現有 Roster.txt
-    async function loadRoster(){
-      try {
-        const r = await fetch('/api/roster');
-        if (!r.ok) throw await r.json();
-        const j = await r.json();
-        editor.value = j.text;
-        currentSha = j.sha;
-        status.textContent = '載入完畢，可開始編輯';
-        status.style.color = 'green';
-        editor.disabled = false;
-        saveBtn.disabled = false;
-      } catch(err) {
-        status.textContent = '讀取 Roster.txt 失敗：' + (err.message||JSON.stringify(err));
-        status.style.color = 'red';
-      }
-    }
+async function loadRoster(){
+  try {
+    const r = await fetch('/api/roster');
+    const txt = await r.text();             // 先拿純文字
+    if (!r.ok) throw new Error(txt);        // HTTP 400+ 也 throw
+    // 嘗試 parse JSON
+    let j;
+    try { j = JSON.parse(txt); }
+    catch(e) { throw new Error('不是 JSON，原始回傳：\n' + txt); }
+    editor.value = j.text;
+    currentSha = j.sha;
+    status.textContent = '載入完畢';
+    editor.disabled = false;
+    saveBtn.disabled = false;
+  } catch(err) {
+    status.textContent = '讀取失敗：' + err.message;
+  }
+}
 
     // 2. 提交修改
     saveBtn.addEventListener('click', async ()=>{
@@ -75,3 +77,4 @@
   </script>
 </body>
 </html>
+
