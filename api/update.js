@@ -10,27 +10,26 @@ const FILE   = 'Roster.txt';
 export default async function handler(req, res) {
   if (req.method !== 'PUT') {
     res.setHeader('Allow','PUT');
-    res.status(405).json({ error: 'Only PUT allowed' });
-    return;
+    return res.status(405).json({ error:'Only PUT allowed' });
   }
   const { content, sha } = req.body;
   const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE}`;
   const payload = {
-    message: `Web 更新排班 ${new Date().toISOString().slice(0,10)}`,
-    content: Buffer.from(content, 'utf8').toString('base64'),
+    message: `Web 更新 Roster.txt (${new Date().toISOString().slice(0,10)})`,
+    content: Buffer.from(content,'utf8').toString('base64'),
     sha,
     branch: BRANCH
   };
   const gh = await fetch(url, {
     method: 'PUT',
     headers: {
-      'Accept': 'application/vnd.github.v3+json',
-      'Authorization': `token ${TOKEN}`,
-      'Content-Type': 'application/json'
+      'Accept':'application/vnd.github.v3+json',
+      'Authorization':`token ${TOKEN}`,
+      'Content-Type':'application/json'
     },
     body: JSON.stringify(payload)
   });
-  const data = await gh.json();
-  if (!gh.ok) return res.status(gh.status).json(data);
-  res.status(200).json(data);
+  const j = await gh.json();
+  if (!gh.ok) return res.status(gh.status).json(j);
+  res.status(200).json(j);
 }
