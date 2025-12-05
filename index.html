@@ -24,8 +24,8 @@ const SELECTION_URL = '/selection.txt';
 
 // 呼叫 Serverless 讀 roster.txt
 async function loadRoster() {
-  const res = await fetch('/api/roster');
-  if (!res.ok) throw new Error('讀取 roster.txt 失敗');
+  const res = await fetch('/api/Roster');
+  if (!res.ok) throw new Error('讀取 Roster.txt 失敗');
   return await res.json(); // { text, sha }
 }
 
@@ -114,3 +114,4 @@ async function submitForm(sha) {
 </script>
 </body>
 </html>
+
