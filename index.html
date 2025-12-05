@@ -1,117 +1,77 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8">
-  <title>排班編輯</title>
+  <meta charset="UTF-8">
+  <title>排班編輯頁面</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    body { font-family: sans-serif; max-width: 800px; margin: auto; }
-    fieldset { margin: 1em 0; padding: 1em; border: 1px solid #ccc; }
-    legend { font-weight: bold; }
-    .names { display: flex; flex-wrap: wrap; }
-    .names label { margin-right: 1em; }
-    #submit { margin-top: 1em; padding: .5em 1em; }
-    #log { background: #f9f9f9; padding: .5em; white-space: pre-wrap; }
+    body { font-family:sans-serif; max-width:800px; margin:1em auto; }
+    textarea { width:100%; height:400px; font-family:monospace; box-sizing:border-box; }
+    button { padding:0.5em 1em; margin-top:0.5em; }
+    #status { margin-top:0.5em; color:red; }
   </style>
 </head>
 <body>
   <h1>排班編輯頁面</h1>
-  <div id="form-container">載入中…</div>
-  <button id="submit">送出並 Commit 到 GitHub</button>
-  <pre id="log"></pre>
+  <div id="status">載入中…</div>
+  <textarea id="editor" disabled></textarea>
+  <br>
+  <button id="saveBtn" disabled>送出並 Commit 到 GitHub</button>
 
-<script>
-const SELECTION_URL = '/selection.txt';
+  <script>
+  (()=>{
+    const status = document.getElementById('status');
+    const editor = document.getElementById('editor');
+    const saveBtn = document.getElementById('saveBtn');
+    let currentSha = '';
 
-// 呼叫 Serverless 讀 roster.txt
-async function loadRoster() {
-  const res = await fetch('/api/Roster');
-  if (!res.ok) throw new Error('讀取 Roster.txt 失敗');
-  return await res.json(); // { text, sha }
-}
+    // 1. 讀取現有 Roster.txt
+    async function loadRoster(){
+      try {
+        const r = await fetch('/api/roster');
+        if (!r.ok) throw await r.json();
+        const j = await r.json();
+        editor.value = j.text;
+        currentSha = j.sha;
+        status.textContent = '載入完畢，可開始編輯';
+        status.style.color = 'green';
+        editor.disabled = false;
+        saveBtn.disabled = false;
+      } catch(err) {
+        status.textContent = '讀取 Roster.txt 失敗：' + (err.message||JSON.stringify(err));
+        status.style.color = 'red';
+      }
+    }
 
-// 讀 selection.txt（同事名單）
-async function loadSelection() {
-  const res = await fetch(SELECTION_URL);
-  const txt = await res.text();
-  return txt.split(/\r?\n/).filter(s=>s.trim());
-}
-
-// 把 roster.txt 解析成可勾選的表單
-function parseRosterForm(text, staffList) {
-  const container = document.getElementById('form-container');
-  container.innerHTML = '';
-
-  // 丟掉第一行（標題），以空行切塊
-  const blocks = text.replace(/^.*\n/, '').trim().split(/\n\s*\n/);
-  blocks.forEach(blk => {
-    const lines = blk.split('\n').map(l=>l.trim()).filter(l=>l);
-    const m = lines[0].match(/(\d{4}\/\d{2}\/\d{2})/);
-    if (!m) return;
-    const date = m[1];
-
-    // 找「現場」和「WFH」
-    const onsiteLine = lines.find(l=>/^現場/.test(l)) || '';
-    const wfhLine    = lines.find(l=>/^WFH/i.test(l)) || '';
-    const onsite = onsiteLine.split(/[：:]/)[1]||'';
-    const wfh    = wfhLine.split(/[：:]/)[1]||'';
-
-    const fs = document.createElement('fieldset');
-    fs.innerHTML = `<legend>${date}</legend>
-      <div>現場：</div><div class="names" data-type="onsite" data-date="${date}"></div>
-      <div>WFH：</div><div class="names" data-type="wfh" data-date="${date}"></div>`;
-    container.appendChild(fs);
-
-    staffList.forEach(name=>{
-      ['onsite','wfh'].forEach(type=>{
-        const div = fs.querySelector(`.names[data-type=${type}]`);
-        const checked = (type==='onsite' && onsite.includes(name))
-                     || (type==='wfh'   && wfh.includes(name));
-        const label = document.createElement('label');
-        label.innerHTML = `<input type="checkbox" value="${name}" ${checked?'checked':''}> ${name}`;
-        div.appendChild(label);
-      });
+    // 2. 提交修改
+    saveBtn.addEventListener('click', async ()=>{
+      saveBtn.disabled = true;
+      status.textContent = '送出中…';
+      try {
+        const payload = {
+          content: editor.value,
+          sha: currentSha
+        };
+        const r = await fetch('/api/update', {
+          method: 'PUT',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const j = await r.json();
+        if (!r.ok) throw j;
+        currentSha = j.content.sha;
+        status.textContent = 'Commit 成功！GitHub SHA: ' + currentSha;
+        status.style.color = 'green';
+      } catch(err) {
+        status.textContent = 'Commit 失敗：' + (err.message||JSON.stringify(err));
+        status.style.color = 'red';
+      } finally {
+        saveBtn.disabled = false;
+      }
     });
-  });
-}
 
-// 將表單打回 roster.txt 原始格式並呼叫 /api/update
-async function submitForm(sha) {
-  const fsets = Array.from(document.querySelectorAll('fieldset'));
-  const lines = ['AI 整合報名:'];
-  fsets.forEach(fs=>{
-    const date = fs.querySelector('legend').textContent;
-    const on  = Array.from(fs.querySelectorAll('.names[data-type=onsite] input:checked'))
-                      .map(i=>i.value);
-    const wf  = Array.from(fs.querySelectorAll('.names[data-type=wfh] input:checked'))
-                      .map(i=>i.value);
-    lines.push('', date);
-    lines.push(`現場：${ on.join('、')||'無' }`);
-    lines.push(`WFH：${ wf.join('、')||'無' }`);
-  });
-  const newText = lines.join('\n') + '\n';
-
-  const res = await fetch('/api/update', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content: newText, sha })
-  });
-  const data = await res.json();
-  document.getElementById('log').textContent = JSON.stringify(data, null,2);
-  if (res.ok) alert('已 Commit 排班！GitHub Actions 會自動更新 roster.ics');
-}
-
-;(async ()=>{
-  try {
-    const [{ text, sha }, selection] = await Promise.all([
-      loadRoster(), loadSelection()
-    ]);
-    parseRosterForm(text, selection);
-    document.getElementById('submit').onclick = ()=> submitForm(sha);
-  } catch (e) {
-    document.getElementById('form-container').textContent = e.message;
-  }
-})();
-</script>
+    loadRoster();
+  })();
+  </script>
 </body>
 </html>
-
