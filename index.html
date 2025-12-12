@@ -2,79 +2,137 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>排班編輯頁面</title>
+  <title>排班與名單靜態編輯器</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    body { font-family:sans-serif; max-width:800px; margin:1em auto; }
-    textarea { width:100%; height:400px; font-family:monospace; box-sizing:border-box; }
-    button { padding:0.5em 1em; margin-top:0.5em; }
-    #status { margin-top:0.5em; color:red; }
+    body { font-family: sans-serif; max-width: 800px; margin: 1em auto; padding:0 1em; }
+    h1, h2 { border-bottom: 1px solid #ccc; padding-bottom: .3em; }
+    table { width:100%; border-collapse: collapse; margin-top:.5em; }
+    th, td { border:1px solid #ddd; padding:.5em; text-align:left; }
+    th { background:#f5f5f5; }
+    input[type=text], textarea { width:100%; box-sizing:border-box; font-family: monospace; }
+    button { margin-top:.5em; padding:.5em 1em; }
+    .loading { color: #888; }
   </style>
 </head>
 <body>
-  <h1>排班編輯頁面</h1>
-  <div id="status">載入中…</div>
-  <textarea id="editor" disabled></textarea>
-  <br>
-  <button id="saveBtn" disabled>送出並 Commit 到 GitHub</button>
 
-  <script>
-  (()=>{
-    const status = document.getElementById('status');
-    const editor = document.getElementById('editor');
-    const saveBtn = document.getElementById('saveBtn');
-    let currentSha = '';
+  <h1>排班（ICS）靜態編輯器</h1>
+  <div id="ics-status" class="loading">正在載入 roster.ics …</div>
+  <div id="ics-editor" style="display:none">
+    <table id="ics-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>開始時間 (UTC)</th>
+          <th>事件名稱 (SUMMARY)</th>
+          <th>地點 (LOCATION)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <button id="download-ics">下載 更新後 roster.ics</button>
+  </div>
 
-    // 1. 讀取現有 Roster.txt
-async function loadRoster(){
-  try {
-    const r = await fetch('/api/roster');
-    const txt = await r.text();             // 先拿純文字
-    if (!r.ok) throw new Error(txt);        // HTTP 400+ 也 throw
-    // 嘗試 parse JSON
-    let j;
-    try { j = JSON.parse(txt); }
-    catch(e) { throw new Error('不是 JSON，原始回傳：\n' + txt); }
-    editor.value = j.text;
-    currentSha = j.sha;
-    status.textContent = '載入完畢';
-    editor.disabled = false;
-    saveBtn.disabled = false;
-  } catch(err) {
-    status.textContent = '讀取失敗：' + err.message;
+  <h1 style="margin-top:2em">同事名單（selection.txt）靜態編輯器</h1>
+  <div id="txt-status" class="loading">正在載入 selection.txt …</div>
+  <div id="txt-editor" style="display:none">
+    <textarea id="selection-area" rows="10"></textarea>
+    <button id="download-txt">下載 更新後 selection.txt</button>
+  </div>
+
+<script>
+// 1. ICS 解析＋編輯
+(async ()=>{
+  const res = await fetch('roster.ics');
+  if (!res.ok) {
+    document.getElementById('ics-status').textContent = '載入失敗：' + res.status;
+    return;
   }
-}
-
-    // 2. 提交修改
-    saveBtn.addEventListener('click', async ()=>{
-      saveBtn.disabled = true;
-      status.textContent = '送出中…';
-      try {
-        const payload = {
-          content: editor.value,
-          sha: currentSha
-        };
-        const r = await fetch('/api/update', {
-          method: 'PUT',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify(payload)
-        });
-        const j = await r.json();
-        if (!r.ok) throw j;
-        currentSha = j.content.sha;
-        status.textContent = 'Commit 成功！GitHub SHA: ' + currentSha;
-        status.style.color = 'green';
-      } catch(err) {
-        status.textContent = 'Commit 失敗：' + (err.message||JSON.stringify(err));
-        status.style.color = 'red';
-      } finally {
-        saveBtn.disabled = false;
-      }
+  const raw = await res.text();
+  const [pre, ...evtBlocks] = raw.split(/BEGIN:VEVENT\r?\n/);
+  const footerSplit = evtBlocks.map(b=>b.split(/END:VEVENT\r?\n/));
+  const events = footerSplit.map(([body, ...rest])=>{
+    const lines = body.split(/\r?\n/);
+    const o = {};
+    lines.forEach(l=>{
+      if (l.startsWith('DTSTART:')) o.dt = l.replace('DTSTART:','');
+      if (l.startsWith('SUMMARY:')) o.sm = l.replace('SUMMARY:','');
+      if (l.startsWith('LOCATION:')) o.loc = l.replace('LOCATION:','');
     });
+    // 保存原始其他屬性
+    const others = lines.filter(l=>
+      !l.startsWith('DTSTART:') &&
+      !l.startsWith('SUMMARY:') &&
+      !l.startsWith('LOCATION:')
+    );
+    return { dt:o.dt, sm:o.sm, loc:o.loc, others, post: rest.join('END:VEVENT\n') };
+  });
 
-    loadRoster();
-  })();
-  </script>
+  // 建表
+  const tbody = document.querySelector('#ics-table tbody');
+  events.forEach((e,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td><input type="text" value="${e.dt}"></td>
+      <td><input type="text" value="${e.sm}"></td>
+      <td><input type="text" value="${e.loc}"></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('ics-status').style.display = 'none';
+  document.getElementById('ics-editor').style.display = 'block';
+
+  document.getElementById('download-ics').onclick = ()=>{
+    // 讀回編輯結果
+    document.querySelectorAll('#ics-table tbody tr').forEach((tr,i)=>{
+      const inputs = tr.querySelectorAll('input');
+      events[i].dt  = inputs[0].value.trim();
+      events[i].sm  = inputs[1].value.trim();
+      events[i].loc = inputs[2].value.trim();
+    });
+    // 重組 ICS
+    let out = pre + 'BEGIN:VEVENT\n';
+    events.forEach(e=>{
+      out += 
+        'DTSTART:'  + e.dt  + '\n' +
+        'SUMMARY:'  + e.sm  + '\n' +
+        'LOCATION:' + e.loc + '\n' +
+        e.others.join('\n') + '\nEND:VEVENT\n';
+    });
+    out += 'END:VCALENDAR';
+    // 下載
+    const blob = new Blob([out], {type:'text/calendar;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'roster.ics';
+    a.click();
+  };
+})();
+
+// 2. selection.txt 編輯
+(async ()=>{
+  const res = await fetch('selection.txt');
+  if (!res.ok) {
+    document.getElementById('txt-status').textContent = '載入失敗：' + res.status;
+    return;
+  }
+  const txt = await res.text();
+  const area = document.getElementById('selection-area');
+  area.value = txt;
+  document.getElementById('txt-status').style.display = 'none';
+  document.getElementById('txt-editor').style.display = 'block';
+
+  document.getElementById('download-txt').onclick = ()=>{
+    const blob = new Blob([area.value], {type:'text/plain;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'selection.txt';
+    a.click();
+  };
+})();
+</script>
+
 </body>
 </html>
-
