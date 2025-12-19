@@ -1,14 +1,14 @@
-name: 更新 Roster ICS
+name: 自動更新 Roster ICS（延遲部署後執行）
 
 on:
-  # 當 GitHub Pages build 完成後觸發
-  page_build:
-    # 只關注 main 分支
+  push:
     branches:
       - main
+    paths:
+      - 'Roster.txt'
 
 permissions:
-  contents: write  # 需要推到 repo
+  contents: write
 
 jobs:
   update-roster:
@@ -21,12 +21,12 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      - name: 同步遠端 main 分支
+      - name: 等待 Pages 完成部署（60 秒）
         run: |
-          git fetch origin main
-          git reset --hard origin/main
+          echo "⏳ 等待 60 秒，確保 GitHub Pages 已部署完畢..."
+          sleep 60
 
-      - name: 列出檔案 (Debug)
+      - name: 顯示 workspace 內容（Debug）
         run: |
           echo "Workspace: $GITHUB_WORKSPACE"
           ls -R .
