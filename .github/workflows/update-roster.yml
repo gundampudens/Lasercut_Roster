@@ -1,12 +1,18 @@
 name: 更新 Roster ICS
 
-# 只允許手動觸發
 on:
+  # 手動觸發
   workflow_dispatch:
 
-# 給 GITHUB_TOKEN 寫入 repo contents 的權限
+  # 當 main 分支有針對 Roster.txt 的變更時自動觸發
+  push:
+    branches:
+      - main
+    paths:
+      - 'Roster.txt'
+
 permissions:
-  contents: write
+  contents: write  # 給 GITHUB_TOKEN 寫入 repo contents 的權限
 
 jobs:
   update-roster:
