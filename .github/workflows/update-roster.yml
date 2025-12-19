@@ -1,35 +1,31 @@
-name: 自動更新 Roster ICS（延遲部署後執行）
+# File: .github/workflows/update-roster-on-pages-build.yml
+name: 自動更新 Roster ICS（等 Pages Build 完成後）
 
 on:
-  push:
+  page_build:
+    # 只關注 main 分支
     branches:
       - main
-    paths:
-      - 'Roster.txt'
 
 permissions:
-  contents: write
+  contents: write   # 需要推回 roster.ics
 
 jobs:
   update-roster:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout 原始碼
+      - name: 檢查觸發事件
+        run: |
+          echo ">> event-name: ${{ github.event_name }}"
+          echo ">> branch:     ${{ github.ref }}"
+          echo ">> pages 状态: ${{ toJson(github.event) }}"
+
+      - name: Checkout 原始碼（含最新 Roster.txt）
         uses: actions/checkout@v3
         with:
           persist-credentials: true
           fetch-depth: 0
-
-      - name: 等待 Pages 完成部署（60 秒）
-        run: |
-          echo "⏳ 等待 90 秒，確保 GitHub Pages 已部署完畢..."
-          sleep 90
-
-      - name: 顯示 workspace 內容（Debug）
-        run: |
-          echo "Workspace: $GITHUB_WORKSPACE"
-          ls -R .
 
       - name: 設定 Python 環境
         uses: actions/setup-python@v4
@@ -41,7 +37,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 執行 update_roster.py
+      - name: 執行 update_roster.py 產生 roster.ics
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -50,7 +46,7 @@ jobs:
             --repo gundampudens/Lasercut_Roster \
             --path roster.ics \
             --branch main \
-            --msg "Auto-update roster.ics @$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --msg "Auto‐update roster.ics @$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
             --token "$GITHUB_TOKEN"
 
       - name: Commit & Push 變更
