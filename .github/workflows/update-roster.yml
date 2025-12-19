@@ -23,8 +23,8 @@ jobs:
 
       - name: 等待 Pages 完成部署（60 秒）
         run: |
-          echo "⏳ 等待 60 秒，確保 GitHub Pages 已部署完畢..."
-          sleep 60
+          echo "⏳ 等待 90 秒，確保 GitHub Pages 已部署完畢..."
+          sleep 90
 
       - name: 顯示 workspace 內容（Debug）
         run: |
